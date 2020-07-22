@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<launch>
+<arg name="output" default="screen" /> <!-- screen/log -->
+<arg name="required" default="true" />
+<arg name="respawn" default="false" />
+<arg name="width" default="5.0" />
+
+<node pkg="novatel_driver" type="novatel_driver" name="novatel_driver" respawn="$(arg respawn)" required="$(arg required)" output="$(arg output)">
+</node>
+
+</launch>
+
