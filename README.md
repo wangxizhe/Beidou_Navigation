@@ -18,40 +18,42 @@ cd
 catkin_make  
   
 ## 运行方法  
-source devel/setup.bash
+source devel/setup.bash  
 roslaunch novatel_driver beidou.launch  
 
 ## 话题介绍  
 本驱动发布四个话题，分别为/imu/data、/gpa/fix、/gps/odom、/gps/vel  
 ### /imu/data（sensor_msgs::Imu）  
-此话题内存放的为惯导侧得的数据
+此话题内存放的为惯导侧得的数据  
 linear_acceleration为x、y、z三个方向的加速度（x为车的正右方、y为车前进方向、z为车的正上方。三个方向与惯导安装方式与内参校准方式有关，此处安装方式为Y轴朝后，X轴朝左，在内参标定时需对坐标系进行旋转，旋转至Y轴朝车前进方向，Z轴朝上。）  
 angular_velocity为x、y、z三个方向的角速度  
 orientation为偏航四元数，此偏航四元数由加速度与角速度侧得，由于没有磁力计数据，由此四元数测得的RPY只有roll与pitch是正确的  
 ### /gpa/fix（sensor_msgs::NavSatFix）  
+#### 位置信息
 latitude 纬度  
-longitude  经度
+longitude  经度  
 altitude 海拔高度  
-position_covariance为误差矩阵
-position_covariance[0] 纬度误差
-position_covariance[4] 经度误差
+
+#### position_covariance为误差矩阵  
+position_covariance[0] 纬度误差  
+position_covariance[4] 经度误差  
 position_covariance[8] 海拔误差   
 ### /gps/odom（nav_msgs::Odometry）  
-pose.pose.orientation.x  Roll
-pose.pose.orientation.y  Pitch
-pose.pose.orientation.z  Yaw
-
-pose.covariance  误差矩阵
-pose.covariance[0] roll误差
-pose.covariance[1] pitch误差
+#### 姿态角信息  
+pose.pose.orientation.x  Roll  
+pose.pose.orientation.y  Pitch  
+pose.pose.orientation.z  Yaw  
+#### pose.covariance  误差矩阵  
+pose.covariance[0] roll误差  
+pose.covariance[1] pitch误差  
 pose.covariance[5] yaw误差  
 ### /gps/vel（geometry_msgs::TwistWithCovarianceStamped）  
-速度信息  
+#### 速度信息  
 twist.twist.linear.x   东方向的速度
 twist.twist.linear.y   北方向的速度  
 twist.twist.linear.z   天方向的速度  
 
-twist.covariance   误差矩阵  
-twist.covariance[0]  东方向的速度误差
-twist.covariance[7]  北方向的速度误差
-twist.covariance[14] 天方向的速度误差
+#### twist.covariance   误差矩阵  
+twist.covariance[0]  东方向的速度误差  
+twist.covariance[7]  北方向的速度误差  
+twist.covariance[14] 天方向的速度误差  
