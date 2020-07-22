@@ -11,7 +11,7 @@ Ros driver of Beidou positioning System
 遥控无人车左拐右拐（画8）直至INS状态字变为INS_SOLUTION_GOOD，POS状态字变为INS_RTKFIXED
 
 ## 安装方法  
-mkdir -p ~/catkin_workspace/src
+mkdir -p ~/catkin_workspace/src  
 cd catkin_workspace/src  
 git clone https://github.com/wangxizhe/Beidou_Navigation.git  
 cd  
