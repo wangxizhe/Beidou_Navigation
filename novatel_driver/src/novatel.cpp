@@ -39,7 +39,9 @@ public:
     void SplitString(const string& s, vector<string>& v, const string& c);
     void Split_To_Float_int(const string &in, vector<float> &out_float, vector<int> &out_int, int index, int imu_index);
     void IMUupdate(double gx, double gy, double gz, double ax, double ay, double az);
-    void mean_filter(double in, double out);
+    void mean_filter_x(double in);
+    void mean_filter_y(double in);
+    void mean_filter_z(double in);
 
 private:
   ros::NodeHandle nh;
@@ -49,15 +51,18 @@ private:
   float exInt = 0, eyInt = 0, ezInt = 0;    // scaled integral error
   ros::Publisher IMU_pub, fix_pub, vel_pub, odom_pub;
   double temp_x , temp_y , temp_z ;
-  int count_a=0, count_g=0, LOCK=0;
-  std::vector<double> vec_a;
+   int count_g=0, LOCK_x=0, LOCK_y=0 , LOCK_z=0;
+  std::vector<double> vec_a_x;
+  std::vector<double> vec_a_y;
+  std::vector<double> vec_a_z;
+    double a_x_filter=0, a_y_filter=0 , a_z_filter=0;
 
 
 };
 
 void Novatel_gps::recieve()
 {
-    std_msgs::String result;
+std_msgs::String result;
     std::string recv_str;
     ostringstream recv_str_ss;
     result.data = ser.read(ser.available());
@@ -180,7 +185,6 @@ void Novatel_gps::recieve()
             }
         }
     }
-
     string::size_type pos4,pos5,pos6,pos7;
     pos4 = str_imu.find("*");
     pos6 = str_imu.find("%");
@@ -193,19 +197,16 @@ void Novatel_gps::recieve()
         vector<float> vec_latlon;
         Split_To_Float_int(str_imu, vec_latlon, vec_imu, 3, 1);
         str_imu.clear();
-        double a_z=((vec_imu[0]*(0.2/65536)/125)/1000)*9.8065*125;//xright y front z up
-        double a_y=-((vec_imu[1]*(0.2/65536)/125)/1000)*9.8065*125+0.1;
-        double a_x=((vec_imu[2]*(0.2/65536)/125)/1000)*9.8065*125;
+        double a_z=((vec_imu[0]*(0.2/65536)/125)/1000)*9.8065*125+0.005;//xright y front z up
+        double a_y=-((vec_imu[1]*(0.2/65536)/125)/1000)*9.8065*125+0.12;
+        double a_x=((vec_imu[2]*(0.2/65536)/125)/1000)*9.8065*125-0.08;
         double a_x_turn=-a_x;
         double a_y_turn=a_y;
         double a_z_turn=-a_z;
-
-        double a_x_filter, a_y_filter, a_z_filter;
-        mean_filter(a_x_turn, a_x_filter);
-        mean_filter(a_y_turn, a_y_filter);
-        mean_filter(a_z_turn, a_z_filter);
-
-//        ROS_INFO("a_x_turn=%f, a_y_turn=%f, a_z_turn=%f", a_x, a_y, a_z);
+        
+        mean_filter_x(a_x_turn);
+        mean_filter_y(a_y_turn);
+        mean_filter_z(a_z_turn);
 
         double g_z=((vec_imu[3]*(0.008/65536))/125)*50;
         double g_y=-((vec_imu[4]*(0.008/65536))/125)*50;
@@ -238,13 +239,12 @@ void Novatel_gps::recieve()
             g_y_turn=g_y_2-temp_y;
             g_z_turn=-g_z_2-temp_z;
         }
-//        ROS_INFO("g_x_turn=%f, g_y_turn=%f, g_z_turn=%f", a_x, a_y, a_z);
         IMUupdate(g_x_turn, g_y_turn, g_z_turn, a_x_filter, a_y_filter, a_z_filter);
 
         sensor_msgs::Imu imu_data;
         imu_data.header.stamp = ros::Time::now();
         imu_data.header.frame_id = "base_link";
-        //四元数位姿,所有数据设为固定值，可以自己写代码获取ＩＭＵ的数据，，然后进行传递
+        //四元数位姿,所有数据设为固定值，可以自己写代码获取IMU的数据，，然后进行传递
         imu_data.orientation.x = q1;
         imu_data.orientation.y = q2;
         imu_data.orientation.z = q3;
@@ -253,17 +253,19 @@ void Novatel_gps::recieve()
         imu_data.linear_acceleration.x = a_x_filter;
         imu_data.linear_acceleration.y = a_y_filter;
         imu_data.linear_acceleration.z = a_z_filter;
+
         //角速度
         imu_data.angular_velocity.x = g_x_turn;
         imu_data.angular_velocity.y = g_y_turn;
         imu_data.angular_velocity.z = g_z_turn;
         //发布IMU
         IMU_pub.publish(imu_data);
-//        tf::Quaternion quat;
-//        double roll, pitch, yaw;
-//        tf::quaternionMsgToTF(imu_data.orientation, quat);
-//        tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
-//        ROS_INFO("roll=%f, pitch=%f, yaw=%f", roll, pitch, yaw);
+        tf::Quaternion quat;
+        double roll, pitch, yaw;
+        tf::quaternionMsgToTF(imu_data.orientation, quat);
+        tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+	    cout<<a_y_filter<<" "<<g_z_turn<<endl;
+        ROS_INFO("roll=%f, pitch=%f, yaw=%f", roll, pitch, yaw);
     }
     if((*str_latlon.begin()==35)&&(pos5!=string::npos))
     {
@@ -400,61 +402,214 @@ void Novatel_gps::IMUupdate(double gx, double gy, double gz, double ax, double a
 
 }
 
-void Novatel_gps::mean_filter(double in, double out)
+void Novatel_gps::mean_filter_x(double in)
 {
-    if(LOCK==0)
+    if(LOCK_x==0)
     {
-        for (int i=0; i<10; i++)
+        for (int i=0; i<20; i++)
         {
-            vec_a.push_back(0);
+            vec_a_x.push_back(0);
         }
-        LOCK=1;
+        LOCK_x=1;
     }
-    vec_a[10]=vec_a[9];
-    vec_a[9]=vec_a[8];
-    vec_a[8]=vec_a[7];
-    vec_a[7]=vec_a[6];
-    vec_a[6]=vec_a[5];
-    vec_a[5]=vec_a[4];
-    vec_a[4]=vec_a[3];
-    vec_a[3]=vec_a[2];
-    vec_a[2]=vec_a[1];
-    vec_a[1]=vec_a[0];
-    vec_a[0]=in;
+    vec_a_x[19]=vec_a_x[18];
+    vec_a_x[18]=vec_a_x[17];
+    vec_a_x[17]=vec_a_x[16];
+    vec_a_x[16]=vec_a_x[15];
+    vec_a_x[15]=vec_a_x[14];
+    vec_a_x[14]=vec_a_x[13];
+    vec_a_x[13]=vec_a_x[12];
+    vec_a_x[12]=vec_a_x[11];
+    vec_a_x[11]=vec_a_x[10];
+    vec_a_x[10]=vec_a_x[9];
+    vec_a_x[9]=vec_a_x[8];
+    vec_a_x[8]=vec_a_x[7];
+    vec_a_x[7]=vec_a_x[6];
+    vec_a_x[6]=vec_a_x[5];
+    vec_a_x[5]=vec_a_x[4];
+    vec_a_x[4]=vec_a_x[3];
+    vec_a_x[3]=vec_a_x[2];
+    vec_a_x[2]=vec_a_x[1];
+    vec_a_x[1]=vec_a_x[0];
+    vec_a_x[0]=in;
 
     static int cnst=0;
-    if(cnst<vec_a.size())
+    if(cnst<vec_a_x.size())
     {
         cnst++;
-        out=in;
+        a_x_filter=in;
     }
     else
     {
-        std::vector<double> vec_a1;
-        for (int i=0; i<vec_a.size(); i++)
+        std::vector<double> vec_a_x1;
+        for (int i=0; i<vec_a_x.size(); i++)
         {
-            vec_a1.push_back(vec_a[i]);
+            vec_a_x1.push_back(vec_a_x[i]);
         }
-        for(int i=0; i<vec_a1.size(); i++)
+        for(int i=0; i<vec_a_x1.size(); i++)
         {
-            for (int j=0; j<vec_a1.size()-i; j++)
+            for (int j=0; j<vec_a_x1.size()-i; j++)
             {
-                 if(vec_a1[j]>vec_a1[j+1])
+                 if(vec_a_x1[j]>vec_a_x1[j+1])
                  {
-                     float temp=vec_a1[j];
-                     vec_a1[j]=vec_a1[j+1];
-                     vec_a1[j+1]=temp;
+                     float temp=vec_a_x1[j];
+                     vec_a_x1[j]=vec_a_x1[j+1];
+                     vec_a_x1[j+1]=temp;
                  }
             }
         }
 
         float sum=0;
-        for(int i=1; i<vec_a1.size()-1; i++)
+        for(int i=1; i<vec_a_x1.size()-1; i++)
         {
-            sum+=vec_a1[i];
+            sum+=vec_a_x1[i];
         }
-        out=sum/(vec_a1.size()-2);
+
+        a_x_filter=sum/(vec_a_x1.size()-2);
+
     }
+
+}
+
+void Novatel_gps::mean_filter_y(double in)
+{
+    if(LOCK_y==0)
+    {
+        for (int i=0; i<20; i++)
+        {
+            vec_a_y.push_back(0);
+        }
+        LOCK_y=1;
+    }
+    vec_a_y[19]=vec_a_y[18];
+    vec_a_y[18]=vec_a_y[17];
+    vec_a_y[17]=vec_a_y[16];
+    vec_a_y[16]=vec_a_y[15];
+    vec_a_y[15]=vec_a_y[14];
+    vec_a_y[14]=vec_a_y[13];
+    vec_a_y[13]=vec_a_y[12];
+    vec_a_y[12]=vec_a_y[11];
+    vec_a_y[11]=vec_a_y[10];
+    vec_a_y[10]=vec_a_y[9];
+    vec_a_y[9]=vec_a_y[8];
+    vec_a_y[8]=vec_a_y[7];
+    vec_a_y[7]=vec_a_y[6];
+    vec_a_y[6]=vec_a_y[5];
+    vec_a_y[5]=vec_a_y[4];
+    vec_a_y[4]=vec_a_y[3];
+    vec_a_y[3]=vec_a_y[2];
+    vec_a_y[2]=vec_a_y[1];
+    vec_a_y[1]=vec_a_y[0];
+    vec_a_y[0]=in;
+
+    static int cnst=0;
+
+    if(cnst<vec_a_y.size())
+    {
+        cnst++;
+        a_y_filter=in;
+    }
+    else
+    {
+        std::vector<double> vec_a_y1;
+        for (int i=0; i<vec_a_y.size(); i++)
+        {
+            vec_a_y1.push_back(vec_a_y[i]);
+        }
+        for(int i=0; i<vec_a_y1.size(); i++)
+        {
+            for (int j=0; j<vec_a_y1.size()-i; j++)
+            {
+                 if(vec_a_y1[j]>vec_a_y1[j+1])
+                 {
+                     float temp=vec_a_y1[j];
+                     vec_a_y1[j]=vec_a_y1[j+1];
+                     vec_a_y1[j+1]=temp;
+                 }
+            }
+        }
+
+        float sum=0;
+        for(int i=1; i<vec_a_y1.size()-1; i++)
+        {
+            sum+=vec_a_y1[i];
+        }
+
+        a_y_filter=sum/(vec_a_y1.size()-2);
+
+    }
+
+
+}
+
+void Novatel_gps::mean_filter_z(double in)
+{
+    if(LOCK_z==0)
+    {
+        for (int i=0; i<20; i++)
+        {
+            vec_a_z.push_back(0);
+        }
+        LOCK_z=1;
+    }
+    vec_a_z[19]=vec_a_z[18];
+    vec_a_z[18]=vec_a_z[17];
+    vec_a_z[17]=vec_a_z[16];
+    vec_a_z[16]=vec_a_z[15];
+    vec_a_z[15]=vec_a_z[14];
+    vec_a_z[14]=vec_a_z[13];
+    vec_a_z[13]=vec_a_z[12];
+    vec_a_z[12]=vec_a_z[11];
+    vec_a_z[11]=vec_a_z[10];
+    vec_a_z[10]=vec_a_z[9];
+    vec_a_z[9]=vec_a_z[8];
+    vec_a_z[8]=vec_a_z[7];
+    vec_a_z[7]=vec_a_z[6];
+    vec_a_z[6]=vec_a_z[5];
+    vec_a_z[5]=vec_a_z[4];
+    vec_a_z[4]=vec_a_z[3];
+    vec_a_z[3]=vec_a_z[2];
+    vec_a_z[2]=vec_a_z[1];
+    vec_a_z[1]=vec_a_z[0];
+    vec_a_z[0]=in;
+
+    static int cnst=0;
+    if(cnst<vec_a_z.size())
+    {
+        cnst++;
+        a_z_filter=in;
+    }
+    else
+    {
+        std::vector<double> vec_a_z1;
+        for (int i=0; i<vec_a_z.size(); i++)
+        {
+            vec_a_z1.push_back(vec_a_z[i]);
+        }
+        for(int i=0; i<vec_a_z1.size(); i++)
+        {
+            for (int j=0; j<vec_a_z1.size()-i; j++)
+            {
+                 if(vec_a_z1[j]>vec_a_z1[j+1])
+                 {
+                     float temp=vec_a_z1[j];
+                     vec_a_z1[j]=vec_a_z1[j+1];
+                     vec_a_z1[j+1]=temp;
+                 }
+            }
+        }
+
+        float sum=0;
+        for(int i=1; i<vec_a_z1.size()-1; i++)
+        {
+            sum+=vec_a_z1[i];
+        }
+
+        a_z_filter=sum/(vec_a_z1.size()-2);
+
+    }
+
+
 }
 
 int main(int argc, char** argv)
@@ -489,4 +644,3 @@ int main(int argc, char** argv)
       }
       return 0;
 }
-
